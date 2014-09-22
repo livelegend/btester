@@ -1,0 +1,11 @@
+*.[aod]
+*.axf
+*.crf
+*.dep
+/*.htm
+*.iex
+*.lnp
+*.lst
+*.plg
+*.uvgui.Administrator
+*.uvgui_Administrator.bak
