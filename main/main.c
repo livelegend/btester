@@ -68,8 +68,7 @@ void set2(uint16_t val) {
     TIM8->CCR4 = 360+val;
     
 }
-    uint16_t * ptr;
-    uint16_t * end;
+
 void DMA1_Channel1_IRQHandler() {
     
     static uint8_t first = 2;
@@ -79,7 +78,6 @@ void DMA1_Channel1_IRQHandler() {
     uint16_t from;
     uint16_t to;
     int32_t sum = 0;
-    int32_t neg = 0;
     static int32_t err = 0;
     
     // tmp
@@ -102,7 +100,7 @@ void DMA1_Channel1_IRQHandler() {
             adcref = DIV(sum, ADC_LEN);
             ADC1->CR |= ADC_CR_ADSTP; // Start ADC conversion
             while (ADC1->CR & ADC_CR_ADSTP);
-            ADC1->SQR1 = ADC_SQR1_SQ1_1 | ADC_SQR1_SQ1_2; // Select channel 1
+            ADC1->SQR1 = ADC_SQR1_SQ1_0; // Select channel 1
             ADC1->CR |= ADC_CR_ADSTART; // Start ADC conversion
         }
         first--;
@@ -131,7 +129,7 @@ void DMA1_Channel1_IRQHandler() {
     }
     
     if (sum>(ADC_LEN<<11)) {
-        sum = DIV(sum, ADC_LEN);
+        sum = DIV(sum-2048*ADC_LEN, ADC_LEN);
         sum = DIV(sum*192000, adcref); // Вычисляем значение в мА
     }
     else {
@@ -227,13 +225,13 @@ int main(void) {
     RCC->AHBENR |= RCC_AHBENR_GPIOAEN;
     RCC->AHBENR |= RCC_AHBENR_GPIOBEN;
     RCC->AHBENR |= RCC_AHBENR_GPIOEEN;
+    gpio_config(GPIOA,  0, MODE_AN, OTYPE_PP, OSPEED_2, PULL_NO, AF_NO); // ADC1_IN1
+    gpio_config(GPIOA,  1, MODE_AN, OTYPE_PP, OSPEED_2, PULL_NO, AF_NO); // ADC1_IN2
     gpio_config(GPIOA,  4, MODE_AN, OTYPE_PP, OSPEED_2, PULL_NO, AF_NO); // ADC2_IN1
     gpio_config(GPIOB,  6, MODE_AF, OTYPE_PP, OSPEED_2, PULL_NO, AF5);   // TIM8_CH1
     gpio_config(GPIOB,  9, MODE_AF, OTYPE_PP, OSPEED_2, PULL_NO, AF10);  // TIM8_CH3
     gpio_config(GPIOB, 14, MODE_AF, OTYPE_PP, OSPEED_2, PULL_NO, AF1);   // TIM15_CH1
     gpio_config(GPIOB, 15, MODE_AF, OTYPE_PP, OSPEED_2, PULL_NO, AF2);   // TIM15_CH1N
-    gpio_config(GPIOC,  0, MODE_AN, OTYPE_PP, OSPEED_2, PULL_NO, AF_NO); // ADC1_IN6
-    gpio_config(GPIOC,  1, MODE_AN, OTYPE_PP, OSPEED_2, PULL_NO, AF_NO); // ADC1_IN7
     gpio_config(GPIOE,  8, MODE_AF, OTYPE_PP, OSPEED_2, PULL_NO, AF2);   // TIM1_CH1N
     gpio_config(GPIOE,  9, MODE_AF, OTYPE_PP, OSPEED_2, PULL_NO, AF2);   // TIM1_CH1
     gpio_config(GPIOE, 12, MODE_AF, OTYPE_PP, OSPEED_2, PULL_NO, AF2);   // TIM1_CH3N
@@ -262,9 +260,9 @@ int main(void) {
     ADC1_2->CCR = ADC12_CCR_CKMODE_0 | ADC12_CCR_VREFEN;
     
     // ADC1 init
-    ADC1->SMPR1 = ADC_SMPR1_SMP6_0 | ADC_SMPR1_SMP6_1; // 7.5 clock cycles sample time on channel 6
+    ADC1->SMPR1 = ADC_SMPR1_SMP1_0 | ADC_SMPR1_SMP1_1; // 7.5 clock cycles sample time on channel 1
     ADC1->SMPR2 = ADC_SMPR2_SMP18_1 | ADC_SMPR2_SMP18_2; // 181.5 clock cycles sample time on channel 18
-    ADC1->DIFSEL = ADC_DIFSEL_DIFSEL_5; // Channel 1 is differential
+    ADC1->DIFSEL = ADC_DIFSEL_DIFSEL_0; // Channel 1 is differential
     ADC1->SQR1 = ADC_SQR1_SQ1_1 | ADC_SQR1_SQ1_4; // Select channel 18
     ADC1->CFGR = ADC_CFGR_DMAEN | ADC_CFGR_DMACFG | ADC_CFGR_CONT; // DMA enable and continious mode enable
     ADC1->CR = 0x00000000;            // ADC voltage regulator
