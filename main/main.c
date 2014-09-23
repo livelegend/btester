@@ -8,7 +8,7 @@
 #define BUF_LEN (ADC_LEN<<1)
 #define ADC_F   (3600000 / ADC_LEN)
 
-#define KOEFF1 380
+#define KOEFF1 1140
 #define KOEFF2 29
 
 uint32_t adcref;
@@ -26,36 +26,68 @@ uint32_t log_k1[256], log_k2[256];
 
 void set1(uint16_t val) {
     
-    // Phase 1
-    TIM15->CCR1 = val;
+    uint16_t rem = val%3;
+    uint16_t val1;
+    uint16_t val2;
+    uint16_t val3;
     
-    // Phase 2
-    if (val<=480) {
-        TIM1->CCR1 = 240;
-        TIM1->CCR2 = 240+val;
-        TIM1->CCMR1 = TIM_CCMR1_OC1M_3 | TIM_CCMR1_OC1M_2 | TIM_CCMR1_OC1M_0
-                    | TIM_CCMR1_OC2M_2 | TIM_CCMR1_OC2M_1;
+    uint32_t ccr1;
+    uint32_t ccr2;
+    uint32_t ccr3;
+    uint32_t ccr4;
+    uint32_t ccmr1;
+    uint32_t ccmr2;
+    
+    // Для повышения точности передаем число в 3 раза больше, чтобы дискретность виртуально увеличилась втрое.
+    // Распределяем "добавки" по фазам равномерно
+    val /= 3;
+    switch (rem) {
+        case 1:  val1 = val+1; val2 = val;   val3 = val;   break;
+        case 2:  val1 = val;   val2 = val+1; val3 = val+1; break;
+        default: val1 = val;   val2 = val;   val3 = val;
+    }
+    
+    // Сначала считаем, потом задаем. Чтобы изменения произошли максимально быстро
+    // Phase 1 calc
+    if (val1<=480) {
+        ccr1  = 240;
+        ccr2  = 240+val1;
+        ccmr1 = TIM_CCMR1_OC1M_3 | TIM_CCMR1_OC1M_2 | TIM_CCMR1_OC1M_0
+              | TIM_CCMR1_OC2M_2 | TIM_CCMR1_OC2M_1;
     }
     else {
-        TIM1->CCR1 = val-480;
-        TIM1->CCR2 = 240;
-        TIM1->CCMR1 = TIM_CCMR1_OC1M_3 | TIM_CCMR1_OC1M_2
-                    | TIM_CCMR1_OC2M_2 | TIM_CCMR1_OC2M_1 | TIM_CCMR1_OC2M_0;
+        ccr1  = val1-480;
+        ccr2  = 240;
+        ccmr1 = TIM_CCMR1_OC1M_3 | TIM_CCMR1_OC1M_2
+              | TIM_CCMR1_OC2M_2 | TIM_CCMR1_OC2M_1 | TIM_CCMR1_OC2M_0;
     }
     
-    // Phase 3
-    if (val<=240) {
-        TIM1->CCMR2 = TIM_CCMR2_OC3M_3 | TIM_CCMR2_OC3M_2 | TIM_CCMR2_OC3M_0
-                    | TIM_CCMR2_OC4M_2 | TIM_CCMR2_OC4M_1 | TIM_CCMR2_OC3PE | TIM_CCMR2_OC4PE;
-        TIM1->CCR3 = 480;
-        TIM1->CCR4 = 480+val;
+    // Phase 2 calc
+    if (val2<=240) {
+        ccr3 = 480;
+        ccr4 = 480+val2;
+        ccmr2 = TIM_CCMR2_OC3M_3 | TIM_CCMR2_OC3M_2 | TIM_CCMR2_OC3M_0
+              | TIM_CCMR2_OC4M_2 | TIM_CCMR2_OC4M_1 | TIM_CCMR2_OC3PE | TIM_CCMR2_OC4PE;
     }
     else {
-        TIM1->CCMR2 = TIM_CCMR2_OC3M_3 | TIM_CCMR2_OC3M_2
-                    | TIM_CCMR2_OC4M_2 | TIM_CCMR2_OC4M_1 | TIM_CCMR2_OC4M_0 | TIM_CCMR2_OC3PE | TIM_CCMR2_OC4PE;
-        TIM1->CCR3 = val-240;
-        TIM1->CCR4 = 480;
+        ccr3 = val2-240;
+        ccr4 = 480;
+        ccmr2 = TIM_CCMR2_OC3M_3 | TIM_CCMR2_OC3M_2
+              | TIM_CCMR2_OC4M_2 | TIM_CCMR2_OC4M_1 | TIM_CCMR2_OC4M_0 | TIM_CCMR2_OC3PE | TIM_CCMR2_OC4PE;
     }
+    
+    // Phase 1 set
+    TIM1->CCR1  = ccr1;
+    TIM1->CCR2  = ccr2;
+    TIM1->CCMR1 = ccmr1;
+    
+    // Phase 2 set
+    TIM1->CCR3  = ccr3;
+    TIM1->CCR4  = ccr4;
+    TIM1->CCMR2 = ccmr2;
+    
+    // Phase 3 set
+    TIM15->CCR1 = val3;
     
 }
 
@@ -109,46 +141,33 @@ void DMA1_Channel1_IRQHandler() {
     }
     
     if (DMA1->ISR & DMA_IFCR_CHTIF1) { // Смотрим из первой половины буфера брать
-        //ptr = adc1;
-        //end = adc1 + ADC_LEN;
         from = 0;
         to = ADC_LEN;
     }
     else { // или из второй
-        //ptr = adc1 + ADC_LEN;
-        //end = adc1 + BUF_LEN;
         from = ADC_LEN;
         to = BUF_LEN;
     }
-    //while (ptr<end) {
-    //    sum += *ptr;
-    //    ptr++;
-    //}
     for (i=from; i<to; i++) { // Суммируем
         sum += adc1[i];
     }
     
-    if (sum>(ADC_LEN<<11)) {
-        sum = DIV(sum-2048*ADC_LEN, ADC_LEN);
-        sum = DIV(sum*192000, adcref); // Вычисляем значение в мА
-    }
-    else {
-        sum = 0;
-    }
+    sum = DIV(sum, ADC_LEN);
+    sum = DIV(sum*48000, adcref); // Вычисляем значение в мА
     
     err += (ref1 - sum)*KOEFF1/ADC_F; // Складируем текущую ошибку с предыдущей. Значение ошибки в В*сек*F, то есть в 10 тыс раз больше
     if (err<0) { // Ограничиваем ошибку снизу
         err = 0;
     }
-    else if (err>576000) { // и сверху
-        err = 576000;
+    else if (err>1728000) { // и сверху
+        err = 1728000;
     }
     set1(DIV(err, 1000));
     
     // Log
     log_adc1[n1&0xFF] = sum;
     log_err1[n1&0xFF] = DIV(err, 1000);
-    log_k1[n1&0xFF]   = DIV(err, 720);
+    log_k1[n1&0xFF]   = DIV(err, 1728);
     n1++;
     
     // Clear interrupt flags
@@ -262,7 +281,7 @@ int main(void) {
     // ADC1 init
     ADC1->SMPR1 = ADC_SMPR1_SMP1_0 | ADC_SMPR1_SMP1_1; // 7.5 clock cycles sample time on channel 1
     ADC1->SMPR2 = ADC_SMPR2_SMP18_1 | ADC_SMPR2_SMP18_2; // 181.5 clock cycles sample time on channel 18
-    ADC1->DIFSEL = ADC_DIFSEL_DIFSEL_0; // Channel 1 is differential
+    //ADC1->DIFSEL = ADC_DIFSEL_DIFSEL_0; // Channel 1 is differential
     ADC1->SQR1 = ADC_SQR1_SQ1_1 | ADC_SQR1_SQ1_4; // Select channel 18
     ADC1->CFGR = ADC_CFGR_DMAEN | ADC_CFGR_DMACFG | ADC_CFGR_CONT; // DMA enable and continious mode enable
     ADC1->CR = 0x00000000;            // ADC voltage regulator
@@ -270,9 +289,9 @@ int main(void) {
     sec = 100; while (sec--) __NOP(); // and 10 us wait
     ADC1->CR |= ADC_CR_ADCAL;         // ADC calibration sequence
     while (ADC1->CR & ADC_CR_ADCAL);  // for single-ended mode
-    ADC1->CR |= ADC_CR_ADCALDIF;      // ADC calibration
-    ADC1->CR |= ADC_CR_ADCAL;         // sequence
-    while (ADC1->CR & ADC_CR_ADCAL);  // for differential mode
+    //ADC1->CR |= ADC_CR_ADCALDIF;      // ADC calibration
+    //ADC1->CR |= ADC_CR_ADCAL;         // sequence
+    //while (ADC1->CR & ADC_CR_ADCAL);  // for differential mode
     ADC1->CR |= ADC_CR_ADEN; // Enable ADC
     while (!(ADC1->ISR & ADC_ISR_ADRD));
     ADC1->CR |= ADC_CR_ADSTART; // Start ADC conversion
